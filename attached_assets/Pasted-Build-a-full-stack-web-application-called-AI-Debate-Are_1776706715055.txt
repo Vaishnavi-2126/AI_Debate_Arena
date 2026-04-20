@@ -1,0 +1,158 @@
+Build a full-stack web application called **"AI Debate Arena"**.
+
+## 🎯 Core Concept
+
+This is a gamified chat-based platform where users debate with an AI. The AI challenges the user’s arguments, provides counterpoints, and scores their performance based on logic, clarity, and confidence.
+
+---
+
+## 🖥️ Tech Requirements
+
+* Frontend: React (with modern hooks)
+* Backend: Node.js with Express OR Python with Flask (choose one and fully implement)
+* Styling: Tailwind CSS
+* Use a clean project structure (separate frontend and backend folders)
+* API integration ready (use placeholder/mock AI logic if needed)
+
+---
+
+## 🎨 UI / UX Design
+
+Create a **modern, premium UI** with:
+
+* Dark mode by default 🌙
+* Animated gradient background (smooth moving gradient using CSS)
+* Glassmorphism cards (blur + transparency)
+* Smooth transitions and hover effects
+* Rounded UI (border-radius large)
+* Chat interface similar to ChatGPT:
+
+  * Left: AI messages
+  * Right: User messages
+
+### Pages:
+
+1. Home Page
+2. Debate Arena Page
+3. Score Dashboard
+
+---
+
+## 🧩 Core Features
+
+### 1. Topic Selection
+
+* User can:
+
+  * Choose from preset topics (AI, Education, Social Media, etc.)
+  * OR enter custom topic
+
+---
+
+### 2. Chat-Based Debate System
+
+* Fully text-based (NO voice)
+* User sends argument
+* AI responds with:
+
+  * Counter-argument
+  * Critical thinking question
+
+---
+
+### 3. AI Logic (Important)
+
+Simulate intelligent debate behavior:
+
+* Detect weak arguments
+* Challenge assumptions
+* Ask “why” and “how” questions
+* Provide logical counterpoints
+
+---
+
+### 4. Scoring System (Gamified)
+
+After every 3–5 messages, evaluate user:
+
+Score on:
+
+* Logic (0–10)
+* Clarity (0–10)
+* Confidence (0–10)
+
+Display:
+
+* Progress bars
+* Total score
+* Feedback text
+
+---
+
+### 5. Gamification 🏆
+
+* XP points for each debate
+* Levels (Beginner → Intermediate → Pro)
+* Badges:
+
+  * “Strong Thinker”
+  * “Confident Speaker”
+  * “Logic Master”
+* Streak system (daily debates)
+
+---
+
+### 6. Dashboard Page
+
+Show:
+
+* Total debates
+* Average score
+* Best topic
+* XP & level
+* Achievements
+
+---
+
+## ⚙️ Backend Requirements
+
+* Create API endpoints:
+
+  * /start-debate
+  * /send-message
+  * /get-score
+* Maintain session-based chat history
+* Implement scoring logic
+* Use simple in-memory storage (or JSON)
+
+---
+
+## ✨ Extra Enhancements
+
+* Typing animation for AI responses
+* Auto-scroll chat
+* “Thinking…” indicator
+* Sound effects (optional)
+
+---
+
+## 📁 Code Quality
+
+* Clean, readable, well-commented code
+* Modular components
+* No broken features
+
+---
+
+## 🚀 Goal
+
+The app should feel like a **real product**, not a basic project:
+
+* Smooth UI
+* Engaging interaction
+* Smart responses
+* Visually impressive
+
+---
+
+Generate the full working code step-by-step and explain how to run it on Replit.

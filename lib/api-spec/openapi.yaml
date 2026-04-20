@@ -3,13 +3,22 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: AI Debate Arena API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: debates
+    description: Debate session operations
+  - name: messages
+    description: Chat message operations
+  - name: scores
+    description: Scoring operations
+  - name: profile
+    description: User profile and gamification
+
 paths:
   /healthz:
     get:
@@ -24,6 +33,167 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /debates/start:
+    post:
+      operationId: startDebate
+      tags: [debates]
+      summary: Start a new debate session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartDebateBody"
+      responses:
+        "201":
+          description: Debate started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebateSession"
+
+  /debates:
+    get:
+      operationId: listDebates
+      tags: [debates]
+      summary: List all debate sessions
+      responses:
+        "200":
+          description: List of debate sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DebateSession"
+
+  /debates/{sessionId}:
+    get:
+      operationId: getDebate
+      tags: [debates]
+      summary: Get a specific debate session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Debate session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebateWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /debates/{sessionId}/end:
+    post:
+      operationId: endDebate
+      tags: [debates]
+      summary: End a debate session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Debate ended with final score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebateSession"
+
+  /debates/{sessionId}/messages:
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message in a debate and get AI response
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageBody"
+      responses:
+        "200":
+          description: AI response message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageExchange"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /debates/{sessionId}/score:
+    get:
+      operationId: getScore
+      tags: [scores]
+      summary: Get current score for a debate session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DebateScore"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get user profile and gamification stats
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /profile/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [profile]
+      summary: Get dashboard summary with stats and achievements
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +204,226 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    StartDebateBody:
+      type: object
+      properties:
+        topic:
+          type: string
+        position:
+          type: string
+          description: User's stance on the topic
+      required:
+        - topic
+
+    SendMessageBody:
+      type: object
+      properties:
+        content:
+          type: string
+      required:
+        - content
+
+    DebateSession:
+      type: object
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+        position:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [active, completed]
+        messageCount:
+          type: integer
+        logicScore:
+          type: ["integer", "null"]
+        clarityScore:
+          type: ["integer", "null"]
+        confidenceScore:
+          type: ["integer", "null"]
+        totalScore:
+          type: ["integer", "null"]
+        xpEarned:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - topic
+        - status
+        - messageCount
+        - createdAt
+        - updatedAt
+
+    DebateMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        role:
+          type: string
+          enum: [user, ai]
+        content:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - sessionId
+        - role
+        - content
+        - createdAt
+
+    DebateWithMessages:
+      type: object
+      properties:
+        session:
+          $ref: "#/components/schemas/DebateSession"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebateMessage"
+        score:
+          $ref: "#/components/schemas/DebateScore"
+      required:
+        - session
+        - messages
+        - score
+
+    MessageExchange:
+      type: object
+      properties:
+        userMessage:
+          $ref: "#/components/schemas/DebateMessage"
+        aiMessage:
+          $ref: "#/components/schemas/DebateMessage"
+        score:
+          $ref: "#/components/schemas/DebateScore"
+      required:
+        - userMessage
+        - aiMessage
+        - score
+
+    DebateScore:
+      type: object
+      properties:
+        logic:
+          type: integer
+        clarity:
+          type: integer
+        confidence:
+          type: integer
+        total:
+          type: integer
+        feedback:
+          type: string
+        messagesSinceLastEval:
+          type: integer
+      required:
+        - logic
+        - clarity
+        - confidence
+        - total
+        - feedback
+        - messagesSinceLastEval
+
+    Badge:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        earned:
+          type: boolean
+        earnedAt:
+          type: ["string", "null"]
+      required:
+        - id
+        - name
+        - description
+        - earned
+
+    UserProfile:
+      type: object
+      properties:
+        xp:
+          type: integer
+        level:
+          type: integer
+        levelName:
+          type: string
+        xpToNextLevel:
+          type: integer
+        totalDebates:
+          type: integer
+        streak:
+          type: integer
+        badges:
+          type: array
+          items:
+            $ref: "#/components/schemas/Badge"
+      required:
+        - xp
+        - level
+        - levelName
+        - xpToNextLevel
+        - totalDebates
+        - streak
+        - badges
+
+    DashboardSummary:
+      type: object
+      properties:
+        profile:
+          $ref: "#/components/schemas/UserProfile"
+        totalDebates:
+          type: integer
+        averageScore:
+          type: number
+        bestTopic:
+          type: ["string", "null"]
+        recentDebates:
+          type: array
+          items:
+            $ref: "#/components/schemas/DebateSession"
+        topicBreakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopicStat"
+      required:
+        - profile
+        - totalDebates
+        - averageScore
+        - recentDebates
+        - topicBreakdown
+
+    TopicStat:
+      type: object
+      properties:
+        topic:
+          type: string
+        count:
+          type: integer
+        avgScore:
+          type: number
+      required:
+        - topic
+        - count
+        - avgScore
