@@ -1,94 +1,18 @@
 import crypto from "crypto";
+import { openai } from "@workspace/integrations-openai-ai-server";
+import { logger } from "./logger.js";
 
 export interface ChatMessage {
   role: "user" | "ai";
   content: string;
 }
 
-const COUNTERARGUMENT_TEMPLATES = [
-  (topic: string, arg: string) =>
-    `While you raise an interesting point about ${topic}, consider this: ${generateCounterpoint(arg)} Why do you believe your argument holds up against this counterpoint?`,
-  (topic: string, arg: string) =>
-    `Your argument shows some reasoning, but let me challenge the underlying assumption here. ${generateChallenge(arg)} How would you respond to this challenge?`,
-  (_topic: string, arg: string) =>
-    `I see what you're trying to argue. However, ${generateLogicalCritique(arg)} Can you strengthen your position?`,
-  (topic: string, _arg: string) =>
-    `The debate around ${topic} is more nuanced than your argument suggests. ${generateNuancePoint(topic)} What evidence do you have to support your position?`,
-];
-
-function generateCounterpoint(arg: string): string {
-  const counterpoints = [
-    "correlation does not imply causation — you're making a logical leap without sufficient evidence",
-    "this argument relies on an appeal to authority without questioning whether that authority is reliable",
-    "you're presenting a false dichotomy — there are more options than the two you've presented",
-    "this is a hasty generalization — you're drawing broad conclusions from limited examples",
-    "the evidence you're citing may be cherry-picked, ignoring contradicting data",
-    "your argument assumes the current state of affairs will remain static, which rarely holds true",
-    "this perspective neglects the systemic factors at play that complicate your conclusion",
-  ];
-  const idx = Math.abs(hashString(arg)) % counterpoints.length;
-  return counterpoints[idx];
-}
-
-function generateChallenge(arg: string): string {
-  const challenges = [
-    "What happens if we scale this idea? The consequences become far less predictable at a broader scope.",
-    "Your premise assumes a level of uniformity that doesn't exist in complex systems.",
-    "Have you considered the second-order effects of your proposed position?",
-    "The historical record shows this kind of reasoning has led to significant unintended consequences.",
-    "You're optimizing for one variable while ignoring trade-offs that affect the broader system.",
-    "This argument doesn't hold when examined from the perspective of those most affected.",
-    "Your logic works in ideal conditions, but reality introduces friction that undermines this reasoning.",
-  ];
-  const idx = Math.abs(hashString(arg)) % challenges.length;
-  return challenges[idx];
-}
-
-function generateLogicalCritique(arg: string): string {
-  const critiques = [
-    "the logical structure of your argument has a gap — you're assuming what you're trying to prove.",
-    "you've made an assertion without adequate support. Where's the evidence?",
-    "this conflates two different things that shouldn't be treated as equivalent.",
-    "the analogy you're implicitly drawing breaks down upon closer inspection.",
-    "this argument would logically lead to conclusions you'd likely reject yourself.",
-    "you're appealing to what seems intuitive rather than what the evidence demonstrates.",
-    "this reasoning contains a hidden assumption that, once revealed, weakens the whole argument.",
-  ];
-  const idx = Math.abs(hashString(arg)) % critiques.length;
-  return critiques[idx];
-}
-
-function generateNuancePoint(topic: string): string {
-  const nuances = [
-    `Different stakeholders in the ${topic} debate hold fundamentally different values, making a single-perspective argument insufficient.`,
-    `The empirical research on ${topic} is more contested than your argument implies — experts actively disagree.`,
-    `Historical context around ${topic} shows that the situation is more complex than a simple judgment allows.`,
-    `Your argument treats ${topic} as a solved problem when it remains an active area of debate among experts.`,
-    `The impact of positions on ${topic} varies significantly depending on geography, culture, and socioeconomic context.`,
-  ];
-  const idx = Math.abs(hashString(topic)) % nuances.length;
-  return nuances[idx];
-}
-
-function hashString(s: string): number {
-  let hash = 0;
-  for (let i = 0; i < s.length; i++) {
-    const char = s.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash;
-  }
-  return hash;
-}
-
-export function generateAIResponse(
-  topic: string,
-  userMessage: string,
-  messageHistory: ChatMessage[],
-): string {
-  const messageCount = messageHistory.length;
-  const templateIdx = messageCount % COUNTERARGUMENT_TEMPLATES.length;
-  const template = COUNTERARGUMENT_TEMPLATES[templateIdx];
-  return template(topic, userMessage);
+export interface ScoreResult {
+  logic: number;
+  clarity: number;
+  confidence: number;
+  total: number;
+  feedback: string;
 }
 
 export function generateInitialAIMessage(topic: string, position?: string): string {
@@ -98,65 +22,165 @@ export function generateInitialAIMessage(topic: string, position?: string): stri
   return `Welcome to the debate on "${topic}".${positionText} I'll be your opponent — and I won't go easy on you. I'll challenge every assumption, probe every claim, and demand evidence for your assertions. Make your opening argument and let's see what you've got. What is your core position on this topic?`;
 }
 
-export function scoreDebate(
-  messages: ChatMessage[],
+export async function generateAIResponse(
+  topic: string,
+  userMessage: string,
+  messageHistory: ChatMessage[],
+): Promise<string> {
+  const systemPrompt = `You are a sharp, relentless debate opponent in the "AI Debate Arena". Your role is to challenge the user's arguments on the topic: "${topic}".
+
+Your debate style:
+- Challenge assumptions and expose logical fallacies directly
+- Provide concrete counterarguments with reasoning
+- Ask probing "why" and "how" questions to force deeper thinking
+- Point out when arguments lack evidence, use false dichotomies, or rely on emotional appeals
+- Keep responses focused and impactful — 2-4 sentences max
+- Never agree with the user; always push back, even on strong points
+- Vary your tactics: sometimes counter with facts, sometimes ask a challenging question, sometimes expose a hidden assumption
+- Be intellectually rigorous but not rude`;
+
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    { role: "system", content: systemPrompt },
+  ];
+
+  for (const msg of messageHistory.slice(-10)) {
+    messages.push({
+      role: msg.role === "user" ? "user" : "assistant",
+      content: msg.content,
+    });
+  }
+
+  messages.push({ role: "user", content: userMessage });
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      max_completion_tokens: 300,
+      messages,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    logger.debug({ contentLength: content?.length }, "AI response generated");
+
+    if (content && content.trim().length > 0) {
+      return content.trim();
+    }
+
+    // fallback if empty
+    return "Interesting point. But let me challenge you — can you provide concrete evidence for that claim? Assertions without evidence are just opinions.";
+  } catch (err) {
+    logger.error({ err }, "AI response generation failed, using fallback");
+    return "Your argument raises some points worth examining. However, correlation does not imply causation — where is the concrete evidence supporting your position? Why should we accept your premise at face value?";
+  }
+}
+
+export async function scoreDebateWithAI(
+  topic: string,
+  userMessages: string[],
   currentLogic: number,
   currentClarity: number,
   currentConfidence: number,
-): { logic: number; clarity: number; confidence: number; total: number; feedback: string } {
-  const userMessages = messages.filter((m) => m.role === "user");
-
+): Promise<ScoreResult> {
   if (userMessages.length === 0) {
     return {
       logic: currentLogic,
       clarity: currentClarity,
       confidence: currentConfidence,
       total: currentLogic + currentClarity + currentConfidence,
-      feedback: "Keep debating to improve your score!",
+      feedback: "Make your argument to start receiving a score!",
     };
   }
 
-  const lastUserMsg = userMessages[userMessages.length - 1].content;
-  const wordCount = lastUserMsg.split(/\s+/).length;
-  const hasEvidence = /because|since|therefore|evidence|research|study|data|fact|according/i.test(lastUserMsg);
-  const hasStructure = /first|second|third|furthermore|however|although|while|despite/i.test(lastUserMsg);
-  const hasConfidence = /clearly|obviously|undoubtedly|certainly|definitely|I believe|I argue|I contend/i.test(lastUserMsg);
-  const hasQuestions = lastUserMsg.includes("?");
-  const hasExamples = /example|instance|such as|for instance|like|case/i.test(lastUserMsg);
+  const recentMessages = userMessages.slice(-3).join("\n---\n");
 
-  let logicDelta = 0;
-  let clarityDelta = 0;
-  let confidenceDelta = 0;
+  const scoringSystemPrompt = `You are a strict, expert debate judge. Your only output must be a raw JSON object — no markdown, no code fences, no explanation, no extra text whatsoever. Just the JSON object.`;
 
-  if (hasEvidence) logicDelta += 2;
-  if (hasExamples) logicDelta += 1;
-  if (wordCount < 10) logicDelta -= 1;
-  if (wordCount > 30) logicDelta += 1;
+  const scoringUserPrompt = `Evaluate these recent debate arguments on the topic "${topic}":
 
-  if (hasStructure) clarityDelta += 2;
-  if (wordCount > 20 && wordCount < 100) clarityDelta += 1;
-  if (hasQuestions) clarityDelta -= 1;
+${recentMessages}
 
-  if (hasConfidence) confidenceDelta += 2;
-  if (wordCount > 15) confidenceDelta += 1;
+Current running scores: Logic ${currentLogic}/10, Clarity ${currentClarity}/10, Confidence ${currentConfidence}/10.
 
-  const newLogic = Math.min(10, Math.max(1, currentLogic + logicDelta));
-  const newClarity = Math.min(10, Math.max(1, currentClarity + clarityDelta));
-  const newConfidence = Math.min(10, Math.max(1, currentConfidence + confidenceDelta));
-  const total = newLogic + newClarity + newConfidence;
+Update each score (0-10) based on argument quality:
+- logic: Logical soundness, use of evidence, absence of fallacies
+- clarity: Structure, language precision, ease of following
+- confidence: Clear position, decisive claims, persuasive tone
 
-  let feedback = "";
-  if (total <= 10) {
-    feedback = "Your arguments need more structure and evidence. Try using facts to back your claims.";
-  } else if (total <= 18) {
-    feedback = "You're making some good points. Consider adding more concrete evidence and clearer structure.";
-  } else if (total <= 24) {
-    feedback = "Strong arguments! You're showing good logical reasoning and clarity.";
-  } else {
-    feedback = "Excellent debating! Your arguments are logical, clear, and confident.";
+Scoring guide: 1-3 = weak/unsupported, 4-6 = average, 7-8 = strong, 9-10 = exceptional.
+One-line arguments with no evidence should score 2-4. Arguments with statistics and reasoning score 6-8.
+
+Return ONLY this JSON (no other text):
+{"logic":NUMBER,"clarity":NUMBER,"confidence":NUMBER,"feedback":"ONE_SENTENCE_FEEDBACK"}`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      max_completion_tokens: 150,
+      messages: [
+        { role: "system", content: scoringSystemPrompt },
+        { role: "user", content: scoringUserPrompt },
+      ],
+    });
+
+    const content = response.choices[0]?.message?.content ?? "";
+    logger.debug({ content }, "AI scoring response");
+
+    // Try to extract JSON from the response
+    const jsonMatch = content.match(/\{[^}]+\}/s);
+    if (!jsonMatch) {
+      logger.warn({ content }, "No JSON found in scoring response, using heuristic");
+      return heuristicScore(userMessages, currentLogic, currentClarity, currentConfidence);
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const logic = Math.min(10, Math.max(0, Math.round(Number(parsed.logic))));
+    const clarity = Math.min(10, Math.max(0, Math.round(Number(parsed.clarity))));
+    const confidence = Math.min(10, Math.max(0, Math.round(Number(parsed.confidence))));
+
+    if (isNaN(logic) || isNaN(clarity) || isNaN(confidence)) {
+      return heuristicScore(userMessages, currentLogic, currentClarity, currentConfidence);
+    }
+
+    return {
+      logic,
+      clarity,
+      confidence,
+      total: logic + clarity + confidence,
+      feedback: String(parsed.feedback ?? "Keep developing your arguments with more evidence and structure."),
+    };
+  } catch (err) {
+    logger.error({ err }, "AI scoring failed, using heuristic fallback");
+    return heuristicScore(userMessages, currentLogic, currentClarity, currentConfidence);
   }
+}
 
-  return { logic: newLogic, clarity: newClarity, confidence: newConfidence, total, feedback };
+function heuristicScore(
+  userMessages: string[],
+  currentLogic: number,
+  currentClarity: number,
+  currentConfidence: number,
+): ScoreResult {
+  const lastMsg = userMessages[userMessages.length - 1] ?? "";
+  const wordCount = lastMsg.split(/\s+/).length;
+  const hasEvidence = /because|since|therefore|evidence|research|study|data|fact|according/i.test(lastMsg);
+  const hasStructure = /first|second|furthermore|however|although|while|despite/i.test(lastMsg);
+  const hasConfidence = /clearly|undoubtedly|certainly|I argue|I contend|I maintain/i.test(lastMsg);
+
+  let logic = currentLogic + (hasEvidence ? 1 : -1) + (wordCount > 30 ? 1 : 0);
+  let clarity = currentClarity + (hasStructure ? 1 : 0) + (wordCount > 15 && wordCount < 120 ? 1 : -1);
+  let confidence = currentConfidence + (hasConfidence ? 1 : 0) + (wordCount > 10 ? 1 : -1);
+
+  logic = Math.min(10, Math.max(1, logic));
+  clarity = Math.min(10, Math.max(1, clarity));
+  confidence = Math.min(10, Math.max(1, confidence));
+
+  const total = logic + clarity + confidence;
+  let feedback = "Add more evidence and structure to strengthen your arguments.";
+  if (total >= 24) feedback = "Excellent arguments — well-reasoned, clear, and confident.";
+  else if (total >= 18) feedback = "Strong reasoning. Try to add more concrete evidence.";
+  else if (total >= 12) feedback = "Decent arguments. Work on clarity and logical structure.";
+
+  return { logic, clarity, confidence, total, feedback };
 }
 
 export function calculateXP(totalScore: number, messageCount: number): number {

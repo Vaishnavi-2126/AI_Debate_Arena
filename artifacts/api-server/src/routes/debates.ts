@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { db, debateSessionsTable, debateMessagesTable, userProfileTable } from "@workspace/db";
 import {
   StartDebateBody,
@@ -13,7 +13,7 @@ import {
   generateAIResponse,
   generateInitialAIMessage,
   generateId,
-  scoreDebate,
+  scoreDebateWithAI,
   calculateXP,
 } from "../lib/debateEngine.js";
 import { logger } from "../lib/logger.js";
@@ -29,6 +29,33 @@ async function ensureProfile() {
   return existing[0];
 }
 
+function formatSession(s: typeof debateSessionsTable.$inferSelect) {
+  return {
+    id: s.id,
+    topic: s.topic,
+    position: s.position,
+    status: s.status,
+    messageCount: s.messageCount,
+    logicScore: s.logicScore,
+    clarityScore: s.clarityScore,
+    confidenceScore: s.confidenceScore,
+    totalScore: s.totalScore,
+    xpEarned: s.xpEarned,
+    createdAt: s.createdAt.toISOString(),
+    updatedAt: s.updatedAt.toISOString(),
+  };
+}
+
+function formatMessage(m: typeof debateMessagesTable.$inferSelect) {
+  return {
+    id: m.id,
+    sessionId: m.sessionId,
+    role: m.role,
+    content: m.content,
+    createdAt: m.createdAt.toISOString(),
+  };
+}
+
 router.post("/debates/start", async (req, res): Promise<void> => {
   const parsed = StartDebateBody.safeParse(req.body);
   if (!parsed.success) {
@@ -38,7 +65,6 @@ router.post("/debates/start", async (req, res): Promise<void> => {
 
   const { topic, position } = parsed.data;
   const sessionId = generateId();
-
   const initialAiContent = generateInitialAIMessage(topic, position ?? undefined);
   const aiMessageId = generateId();
 
@@ -66,38 +92,12 @@ router.post("/debates/start", async (req, res): Promise<void> => {
   const [session] = await db.select().from(debateSessionsTable).where(eq(debateSessionsTable.id, sessionId));
 
   req.log.info({ sessionId, topic }, "Debate started");
-  res.status(201).json({
-    id: session.id,
-    topic: session.topic,
-    position: session.position,
-    status: session.status,
-    messageCount: session.messageCount,
-    logicScore: session.logicScore,
-    clarityScore: session.clarityScore,
-    confidenceScore: session.confidenceScore,
-    totalScore: session.totalScore,
-    xpEarned: session.xpEarned,
-    createdAt: session.createdAt.toISOString(),
-    updatedAt: session.updatedAt.toISOString(),
-  });
+  res.status(201).json(formatSession(session));
 });
 
-router.get("/debates", async (req, res): Promise<void> => {
+router.get("/debates", async (_req, res): Promise<void> => {
   const sessions = await db.select().from(debateSessionsTable).orderBy(desc(debateSessionsTable.createdAt));
-  res.json(sessions.map((s) => ({
-    id: s.id,
-    topic: s.topic,
-    position: s.position,
-    status: s.status,
-    messageCount: s.messageCount,
-    logicScore: s.logicScore,
-    clarityScore: s.clarityScore,
-    confidenceScore: s.confidenceScore,
-    totalScore: s.totalScore,
-    xpEarned: s.xpEarned,
-    createdAt: s.createdAt.toISOString(),
-    updatedAt: s.updatedAt.toISOString(),
-  })));
+  res.json(sessions.map(formatSession));
 });
 
 router.get("/debates/:sessionId", async (req, res): Promise<void> => {
@@ -120,37 +120,17 @@ router.get("/debates/:sessionId", async (req, res): Promise<void> => {
   const logic = session.logicScore ?? 5;
   const clarity = session.clarityScore ?? 5;
   const confidence = session.confidenceScore ?? 5;
-  const total = logic + clarity + confidence;
 
   res.json({
-    session: {
-      id: session.id,
-      topic: session.topic,
-      position: session.position,
-      status: session.status,
-      messageCount: session.messageCount,
-      logicScore: session.logicScore,
-      clarityScore: session.clarityScore,
-      confidenceScore: session.confidenceScore,
-      totalScore: session.totalScore,
-      xpEarned: session.xpEarned,
-      createdAt: session.createdAt.toISOString(),
-      updatedAt: session.updatedAt.toISOString(),
-    },
-    messages: messages.map((m) => ({
-      id: m.id,
-      sessionId: m.sessionId,
-      role: m.role,
-      content: m.content,
-      createdAt: m.createdAt.toISOString(),
-    })),
+    session: formatSession(session),
+    messages: messages.map(formatMessage),
     score: {
       logic,
       clarity,
       confidence,
-      total,
+      total: logic + clarity + confidence,
       feedback: "Keep debating to improve your score!",
-      messagesSinceLastEval: 0,
+      messagesSinceLastEval: session.messageCount % 3,
     },
   });
 });
@@ -203,22 +183,8 @@ router.post("/debates/:sessionId/end", async (req, res): Promise<void> => {
     .where(eq(userProfileTable.id, profile.id));
 
   const [updated] = await db.select().from(debateSessionsTable).where(eq(debateSessionsTable.id, params.data.sessionId));
-
   req.log.info({ sessionId: params.data.sessionId, xpEarned }, "Debate ended");
-  res.json({
-    id: updated.id,
-    topic: updated.topic,
-    position: updated.position,
-    status: updated.status,
-    messageCount: updated.messageCount,
-    logicScore: updated.logicScore,
-    clarityScore: updated.clarityScore,
-    confidenceScore: updated.confidenceScore,
-    totalScore: updated.totalScore,
-    xpEarned: updated.xpEarned,
-    createdAt: updated.createdAt.toISOString(),
-    updatedAt: updated.updatedAt.toISOString(),
-  });
+  res.json(formatSession(updated));
 });
 
 router.post("/debates/:sessionId/messages", async (req, res): Promise<void> => {
@@ -245,6 +211,7 @@ router.post("/debates/:sessionId/messages", async (req, res): Promise<void> => {
     return;
   }
 
+  // Save user message
   const userMessageId = generateId();
   await db.insert(debateMessagesTable).values({
     id: userMessageId,
@@ -253,6 +220,7 @@ router.post("/debates/:sessionId/messages", async (req, res): Promise<void> => {
     content: body.data.content,
   });
 
+  // Fetch full conversation history
   const allMessages = await db.select()
     .from(debateMessagesTable)
     .where(eq(debateMessagesTable.sessionId, params.data.sessionId))
@@ -263,7 +231,19 @@ router.post("/debates/:sessionId/messages", async (req, res): Promise<void> => {
     content: m.content,
   }));
 
-  const aiContent = generateAIResponse(session.topic, body.data.content, chatHistory);
+  // Generate AI response and score in parallel using real AI
+  const [aiContent, newScore] = await Promise.all([
+    generateAIResponse(session.topic, body.data.content, chatHistory),
+    scoreDebateWithAI(
+      session.topic,
+      allMessages.filter((m) => m.role === "user").map((m) => m.content),
+      session.logicScore ?? 5,
+      session.clarityScore ?? 5,
+      session.confidenceScore ?? 5,
+    ),
+  ]);
+
+  // Save AI response
   const aiMessageId = generateId();
   await db.insert(debateMessagesTable).values({
     id: aiMessageId,
@@ -272,14 +252,8 @@ router.post("/debates/:sessionId/messages", async (req, res): Promise<void> => {
     content: aiContent,
   });
 
-  const userMessages = chatHistory.filter((m) => m.role === "user");
-  const newScore = scoreDebate(
-    [...chatHistory, { role: "user" as const, content: body.data.content }],
-    session.logicScore ?? 5,
-    session.clarityScore ?? 5,
-    session.confidenceScore ?? 5,
-  );
-
+  // Update session scores
+  const userMsgCount = allMessages.filter((m) => m.role === "user").length + 1;
   await db.update(debateSessionsTable)
     .set({
       messageCount: session.messageCount + 2,
@@ -294,27 +268,15 @@ router.post("/debates/:sessionId/messages", async (req, res): Promise<void> => {
   const [aiMsg] = await db.select().from(debateMessagesTable).where(eq(debateMessagesTable.id, aiMessageId));
 
   res.json({
-    userMessage: {
-      id: userMsg.id,
-      sessionId: userMsg.sessionId,
-      role: userMsg.role,
-      content: userMsg.content,
-      createdAt: userMsg.createdAt.toISOString(),
-    },
-    aiMessage: {
-      id: aiMsg.id,
-      sessionId: aiMsg.sessionId,
-      role: aiMsg.role,
-      content: aiMsg.content,
-      createdAt: aiMsg.createdAt.toISOString(),
-    },
+    userMessage: formatMessage(userMsg),
+    aiMessage: formatMessage(aiMsg),
     score: {
       logic: newScore.logic,
       clarity: newScore.clarity,
       confidence: newScore.confidence,
       total: newScore.total,
       feedback: newScore.feedback,
-      messagesSinceLastEval: (userMessages.length + 1) % 3,
+      messagesSinceLastEval: userMsgCount % 3,
     },
   });
 });
@@ -340,7 +302,7 @@ router.get("/debates/:sessionId/score", async (req, res): Promise<void> => {
   let feedback = "Keep debating to improve your score!";
   if (total >= 25) feedback = "Excellent debating! Your arguments are logical, clear, and confident.";
   else if (total >= 18) feedback = "Strong arguments! You're showing good logical reasoning and clarity.";
-  else if (total >= 10) feedback = "You're making some good points. Consider adding more concrete evidence.";
+  else if (total >= 10) feedback = "You're making good points. Consider adding more concrete evidence.";
 
   res.json({
     logic,
