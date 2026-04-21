@@ -1,6 +1,6 @@
 import { useRoute, useLocation } from "wouter";
 import { useGetDebate } from "@workspace/api-client-react";
-import { Loader2, ArrowRight, Trophy, Brain, Target, Shield, TrendingUp, Medal } from "lucide-react";
+import { Loader2, ArrowRight, Trophy, Brain, Target, Shield, TrendingUp, Medal, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 function MetricRing({ label, value, icon: Icon, colorClass }: { label: string, value: number, icon: any, colorClass: string }) {
@@ -54,6 +54,40 @@ export default function Results() {
   const { data: debateData, isLoading } = useGetDebate(sessionId || "", {
     query: { enabled: !!sessionId }
   });
+
+  const handleDownload = () => {
+    if (!debateData) return;
+    const { session, messages } = debateData;
+    const lines: string[] = [
+      `AI Debate Arena — Final Transcript`,
+      `Topic: ${session.topic}`,
+      `Date: ${new Date(session.createdAt).toLocaleString()}`,
+      ``,
+      `Final Scores`,
+      `  Logic:      ${session.logicScore ?? 0}/10`,
+      `  Clarity:    ${session.clarityScore ?? 0}/10`,
+      `  Confidence: ${session.confidenceScore ?? 0}/10`,
+      `  Total:      ${session.totalScore ?? 0}/30`,
+      `  XP Earned:  +${session.xpEarned ?? 0}`,
+      ``,
+      `─────────────────────────────────────────`,
+      ``,
+    ];
+    for (const msg of messages ?? []) {
+      const speaker = msg.role === "ai" ? "AI Opponent" : "You";
+      const time = new Date(msg.createdAt).toLocaleTimeString();
+      lines.push(`[${time}] ${speaker}:`);
+      lines.push(msg.content);
+      lines.push("");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `debate-${session.topic.replace(/\s+/g, "-").slice(0, 40)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (isLoading) {
     return (
@@ -144,22 +178,31 @@ export default function Results() {
           </div>
         </div>
 
-        <div className="flex gap-4 pt-4">
-          <Button 
-            size="lg" 
+        <div className="flex flex-wrap gap-4 pt-4 justify-center">
+          <Button
+            size="lg"
             onClick={() => setLocation("/")}
             className="rounded-xl px-8 h-14 bg-white text-black hover:bg-slate-200 font-bold text-lg transition-all shadow-xl"
           >
             New Debate
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
-          <Button 
-            size="lg" 
+          <Button
+            size="lg"
             variant="outline"
             onClick={() => setLocation("/dashboard")}
             className="rounded-xl px-8 h-14 font-bold text-lg border-white/20 hover:bg-white/10"
           >
             View Dashboard
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={handleDownload}
+            className="rounded-xl px-8 h-14 font-bold text-lg border-white/20 hover:bg-white/10"
+          >
+            <Download className="w-5 h-5 mr-2" />
+            Download Transcript
           </Button>
         </div>
 

@@ -55,7 +55,7 @@ Your debate style:
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 300,
+      max_completion_tokens: 8192,
       messages,
     });
 
@@ -115,7 +115,7 @@ Return ONLY this JSON (no other text):
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 150,
+      max_completion_tokens: 4096,
       messages: [
         { role: "system", content: scoringSystemPrompt },
         { role: "user", content: scoringUserPrompt },
