@@ -29,12 +29,25 @@ A full-stack gamified debate platform with:
 - Dashboard with stats, achievements, topic breakdown
 
 ### Pages
+- Login/Signup — Split-panel auth gate shown before app
 - `/` — Home page with topic selection and user profile stats
-- `/debate/:sessionId` — Debate Arena chat interface
-- `/debate/:sessionId/results` — Post-debate results and XP earned
+- `/debate/:sessionId` — Debate Arena chat interface (optimistic updates, download transcript)
+- `/debate/:sessionId/results` — Post-debate results, XP earned, download transcript
 - `/dashboard` — Full gamification dashboard
 
+### Auth
+- `express-session` sessions with `SESSION_SECRET` env var
+- `bcryptjs` password hashing (12 rounds)
+- Auth routes: `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
+- Frontend `AuthProvider` + `useAuth` hook at `src/hooks/use-auth.tsx`
+- App gate: shows Login page when `user === null`
+- `credentials: 'include'` set in `lib/api-client-react/src/custom-fetch.ts`
+
 ### API Endpoints (all under `/api`)
+- `POST /auth/register` — Create account (username, displayName, password)
+- `POST /auth/login` — Sign in
+- `POST /auth/logout` — Sign out
+- `GET /auth/me` — Get current session user
 - `POST /debates/start` — Start a debate session
 - `GET /debates` — List all debates
 - `GET /debates/:sessionId` — Get debate with messages
@@ -44,10 +57,9 @@ A full-stack gamified debate platform with:
 - `GET /profile` — Get user profile and gamification data
 - `GET /profile/dashboard` — Get full dashboard summary
 
-### DB Schema (lib/db/src/schema/debates.ts)
-- `debate_sessions` — debate session with scores
-- `debate_messages` — chat messages (role: user | ai)
-- `user_profile` — XP, level, streak, totalDebates
+### DB Schema
+- `lib/db/src/schema/debates.ts`: `debate_sessions`, `debate_messages`, `user_profile`
+- `lib/db/src/schema/users.ts`: `users` (id, username, displayName, passwordHash)
 
 ## Key Commands
 
